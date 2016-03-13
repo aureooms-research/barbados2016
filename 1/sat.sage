@@ -1,20 +1,47 @@
 import sys
 import hashlib
-import matplotlib.pyplot as plt
 
-n = int( sys.argv[1] )
-r = n # if you change this you have to change the code
-N = r*n**2 # number of vertices
+# capital letter for a variable name means constant
 
-LB = n
-UB = int(n**(3/2)+1)
+M = int( sys.argv[1] ) # number of rows
+N = int( sys.argv[2] ) # number of columns
+R = int( sys.argv[3] ) # number of rounds
+
 best = None
 nsol = 0
 
-x = lambda i , j , k : 1 + i*(r*n) + j * n + k
-firsty = x(r-1,n-1,n-1) + 1
-y = lambda i , b : firsty + b*( N + 1 ) + i
+# k = round id
+# i = row id
+# j = column id
+
+x = lambda k , i , j : 1 + k*(M*N) + i * N + j
 # ijk = lambda v : ((v-1)//n**2,((v-1)%n**2)//n,(v-1)%n)
+
+def validate ( sol ) :
+    pass
+
+def out ( moves , mode = 'r' ) :
+
+    val = len( moves )
+    h = hashlib.sha1(str(moves).encode('utf-8')).hexdigest()
+    filepath = 'sol/{:0}x{}x{}/{}/{}'.format( M , N , R , val , h )
+
+    try :
+        os.makedirs( os.path.dirname( filepath ) )
+    except :
+        pass
+
+    print( 'opening "{}" with mode "{}"'.format( filepath , mode ) )
+
+    return open( filepath , mode )
+
+def getmoves ( sol ) :
+
+    for k in range(R):
+        for i in range(M):
+            for j in range(N):
+                if sol[x(k,i,j)] :
+                    yield ( k + 1 , ( i + 1 , j + 1 ) )
 
 def output_solution ( val , sol ) :
 
@@ -22,100 +49,121 @@ def output_solution ( val , sol ) :
     nsol += 1
 
     print( 'solution #{}'.format( nsol ) )
-    print( 'solution score : {}'.format( val ) )
+    print( '> score : {}'.format( val ) )
 
-    moves = []
-    for i in range(r):
-        for j in range(n):
-            for k in range(n):
-                if sol[x(i,j,k)] :
-                    moves.append( ( i + 1 , ( j , k ) ) )
+    moves = list(getmoves( sol ))
 
-    print( 'assert', val , '==', len(moves))
-    # assert(val == len(moves))
+    if val != len(moves) :
+        print( '> val {} != len(moves) {}'.format(val, len(moves)))
+        print( '> still writing output just in case')
 
     for round , point in moves :
-        print( 'round {}, play point {}'.format( round , point ) )
+        print( '! round {}, play point {}'.format( round , point ) )
 
-    # plot
-    grid = zip( *( ( i // n , i % n ) for i in range( n**2 ) ) )
-    plt.plot(*(grid+['bo']))
-    points = zip( *( point for _, point in moves ) )
-    plt.plot(*(points+['ro']))
-    for round , point in moves :
-        plt.annotate(str(round), xy=point, textcoords='data')
-    plt.axis([-10, n+9, -10, n+9])
+    with out(moves, 'w') as fd :
+        fd.write('{} {} {}\n'.format(M , N , R))
+        fd.write('{}\n'.format(val))
+        for round , point in moves :
+            i, j = point
+            fd.write('{} {} {}\n'.format(round,i,j))
 
-    # save to file
-    h = hashlib.sha1(str(sol).encode('utf-8')).hexdigest()
-    plt.savefig("sol-sat/{:0>5}-{:0>5}#{}.svg".format(n,val,h))
+def max_vars_sat ( p , nvars , firsty , variables , pivot ) :
 
-    # clear plot
-    plt.clf()
+    y = lambda k , t : firsty + t*( nvars + 1 ) + k
+
+    # add 3-SAT clauses to maximize sum of x variables
+    # y_{k,t} means sum_{i=1}^{k} x_i >= t
+
+    # y_{0,0} is always true
+    p.add_clause( ( y( 0 , 0 ) , ) )
+
+    # y_{0,t} with t > 0 is always false
+    for t in range(1, pivot+1 ):
+        p.add_clause( ( -y( 0 , t ) , ) )
+
+    for k , var in enumerate( variables , 1 ) :
+
+        # y_{k,0}, k > 0, is always true
+        p.add_clause( ( y( k , 0 ) , ) )
+
+        # y_{k,t} with 0 < k < t is always false
+        for t in range(k+1, pivot+1 ):
+            p.add_clause( ( -y( k , t ) , ) )
+
+        for t in range(1,pivot+1):
+            p.add_clause( ( -y( k , t ) , y( k - 1 , t ) , y( k - 1 , t - 1 ) ) )
+            p.add_clause( ( -y( k , t ) , y( k - 1 , t ) , var ) )
+
+    # we want y_{nvars,pivot} to be true
+    p.add_clause( ( y( nvars , pivot ) , ) )
+
+    # return last y + 1
+    return y( nvars , pivot ) + 1
 
 def solve_puzzle ( pivot ) :
 
     p = SAT( solver = 'cryptominisat' )
 
     # add increasing constraint
-    for i in range( r ) :
-        for x1 in range( n ) :
-            for y1 in range( n ) :
-                for x2 in range( x1 , n ) :
-                    for y2 in range( y1 , -1 , -1 ) :
-                        if x1 == x2 and y1 == y2 : continue
-                        p.add_clause( ( -x(i , x1 , y1) , -x(i , x2 , y2) ) )
-                for x2 in range( x1 , -1 , -1 ) :
-                    for y2 in range( y1 , n ) :
-                        if x1 == x2 and y1 == y2 : continue
-                        p.add_clause( ( -x(i , x1 , y1) , -x(i , x2 , y2) ) )
+    for k in range( R ) :
+        for i1 in range( M ) :
+            for j1 in range( N ) :
+                for i2 in range( i1 , M ) :
+                    for j2 in range( j1 , -1 , -1 ) :
+                        if i1 == i2 and j1 == j2 : continue
+                        p.add_clause( ( -x(k , i1 , j1) , -x(k , i2 , j2) ) )
+                for i2 in range( i1 , -1 , -1 ) :
+                    for j2 in range( j1 , N ) :
+                        if i1 == i2 and j1 == j2 : continue
+                        p.add_clause( ( -x(k , i1 , j1) , -x(k , i2 , j2) ) )
 
     # add killing constraint
-    for i in range( r ) :
-        for x1 in range( n ) :
-            for y1 in range( n ) :
-                for j in range( i + 1 , r ) :
-                    p.add_clause( ( -x(i , x1 , y1) , -x( j , x1 , y1 ) ) )
-                    for x2 in range( x1 + 1 , n ) :
-                        p.add_clause( ( -x(i, x1, y1) , -x(j, x2, y1 ) ) )
-                    for y2 in range( y1 + 1 , n ) :
-                        p.add_clause( ( -x(i, x1, y1) , -x(j, x1, y2 ) ) )
+    for k1 in range( R ) :
+        for i1 in range( M ) :
+            for j1 in range( N ) :
+                for k2 in range( k1 + 1 , R ) :
+                    p.add_clause( ( -x(k1 , i1 , j1) , -x(k2, i1 , j1 ) ) )
+                    for i2 in range( i1 + 1 , M ) :
+                        p.add_clause( ( -x(k1, i1, j1) , -x(k2, i2, j1 ) ) )
+                    for j2 in range( j1 + 1 , N ) :
+                        p.add_clause( ( -x(k1, i1, j1) , -x(k2, i1, j2 ) ) )
 
+    lastx = x(R-1,M-1,N-1)
 
-    for i in range(1,N):
-        for b in range(1,pivot+1):
-            p.add_clause( ( -y( i , b ) , y( i - 1 , b ) , y( i-1, b-1) ) )
-            p.add_clause( ( -y( i , b ) , y( i - 1 , b ) , 1 + i ) )
-
-    for i in range(N):
-        p.add_clause( ( y( i , 0 ) , ) )
-
-    p.add_clause( ( -y( 0 , 1 ) , 1 ) )
-    p.add_clause( ( y( 0 , 1 ) , -1 ) )
-
-    for b in range( 2 , pivot+1 ) :
-        p.add_clause( ( -y( 0 , b ) , ) )
-
-    p.add_clause( ( y( N-1 , pivot ) , ) )
-
-    # fix top right and bottom left corners
-    # p.add_clause( ( x( 0 , n-1 , n-1 ) , ) )
-    # p.add_clause( ( x( r-1 , 0 , 0 ) , ) )
+    max_vars_sat ( p , lastx , lastx+1 , range(1,lastx+1) , pivot )
 
     return p()
 
-while LB <= UB :
+lb = min( M , N ) # lower bound
+ub = int( M * N ) # upper bound
 
-    pivot = ( LB + UB ) // 2
+while True :
 
-    print( 'LB {} UB {} pivot {} best {}'.format(LB , UB , pivot , best ))
+    print( 'ES target {} best {}'.format(lb , best ))
+
+    sol = solve_puzzle(lb)
+
+    if sol :
+        output_solution(lb,sol)
+        best = lb
+        lb *= 2
+    else :
+        ub = lb - 1
+        lb //= 2
+        break
+
+while lb <= ub :
+
+    pivot = ( lb + ub ) // 2
+
+    print( 'BS lb {} ub {} pivot {} best {}'.format(lb , ub , pivot , best ))
 
     sol = solve_puzzle(pivot)
 
     if sol :
         output_solution(pivot,sol)
         best = pivot
-        LB = pivot + 1
+        lb = pivot + 1
     else :
-        UB = pivot - 1
+        ub = pivot - 1
 
