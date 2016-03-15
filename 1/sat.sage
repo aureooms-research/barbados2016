@@ -24,7 +24,7 @@ def out ( moves , mode = 'r' ) :
 
     val = len( moves )
     h = hashlib.sha1(str(moves).encode('utf-8')).hexdigest()
-    filepath = 'sol/{:0}x{}x{}/{}/{}'.format( M , N , R , val , h )
+    filepath = 'sol/{}x{}x{}/{}/{}'.format( M , N , R , val , h )
 
     try :
         os.makedirs( os.path.dirname( filepath ) )
