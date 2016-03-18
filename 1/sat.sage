@@ -20,11 +20,9 @@ x = lambda k , i , j : 1 + k*(M*N) + i * N + j
 def validate ( sol ) :
     pass
 
-def out ( moves , mode = 'r' ) :
+def out ( val , t , h , mode = 'r' ) :
 
-    val = len( moves )
-    h = hashlib.sha1(str(moves).encode('utf-8')).hexdigest()
-    filepath = 'sol/{}x{}x{}/{}/{}'.format( M , N , R , val , h )
+    filepath = 'sol-test/{}x{}x{}/{}/{}/{}'.format( M , N , R , t , val , h )
 
     try :
         os.makedirs( os.path.dirname( filepath ) )
@@ -43,6 +41,19 @@ def getmoves ( sol ) :
                 if sol[x(k,i,j)] :
                     yield ( k + 1 , ( i + 1 , j + 1 ) )
 
+def output_unsat ( val ) :
+
+    sb = []
+    sb.append('{} {} {}\n'.format(M , N , R))
+    sb.append('{}\n'.format(val))
+    sb.append('0\n') # UNSAT
+
+    raw = ''.join(sb)
+    h = hashlib.sha1(raw.encode('utf-8')).hexdigest()
+
+    with out(val, 'unsat', h, 'w') as fd :
+        fd.write(raw)
+
 def output_solution ( val , sol ) :
 
     global nsol
@@ -60,12 +71,20 @@ def output_solution ( val , sol ) :
     for round , point in moves :
         print( '! round {}, play point {}'.format( round , point ) )
 
-    with out(moves, 'w') as fd :
-        fd.write('{} {} {}\n'.format(M , N , R))
-        fd.write('{}\n'.format(val))
-        for round , point in moves :
-            i, j = point
-            fd.write('{} {} {}\n'.format(round,i,j))
+
+    sb = []
+    sb.append('{} {} {}\n'.format(M , N , R))
+    sb.append('{}\n'.format(val))
+    sb.append('1\n') # SAT
+    for round , point in moves :
+        i, j = point
+        sb.append('{} {} {}\n'.format(round,i,j))
+
+    raw = ''.join(sb)
+    h = hashlib.sha1(raw.encode('utf-8')).hexdigest()
+
+    with out(val, 'sat', h, 'w') as fd :
+        fd.write(raw)
 
 def max_vars_sat ( p , nvars , firsty , variables , pivot ) :
 
@@ -148,6 +167,7 @@ while True :
         best = lb
         lb *= 2
     else :
+        output_unsat(lb)
         ub = lb - 1
         lb //= 2
         break
@@ -165,5 +185,6 @@ while lb <= ub :
         best = pivot
         lb = pivot + 1
     else :
+        output_unsat(pivot)
         ub = pivot - 1
 
