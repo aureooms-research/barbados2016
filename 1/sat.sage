@@ -22,7 +22,7 @@ def validate ( sol ) :
 
 def out ( val , t , h , mode = 'r' ) :
 
-    filepath = 'sol-test/{}x{}x{}/{}/{}/{}'.format( M , N , R , t , val , h )
+    filepath = 'sol-web/{}x{}x{}/{}/{}/{}'.format( M , N , R , t , val , h )
 
     try :
         os.makedirs( os.path.dirname( filepath ) )
