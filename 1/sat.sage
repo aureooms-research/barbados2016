@@ -16,6 +16,7 @@ N = args.columns # number of columns
 R = args.rounds # number of rounds
 
 best = None
+best_sol = None
 nsol = 0
 
 # k = round id
@@ -127,7 +128,7 @@ def max_vars_sat ( p , nvars , firsty , variables , pivot ) :
     # return last y + 1
     return y( nvars , pivot ) + 1
 
-def solve_puzzle ( pivot ) :
+def puzzle ( pivot ) :
 
     p = SAT( solver = 'cryptominisat' )
 
@@ -159,11 +160,15 @@ def solve_puzzle ( pivot ) :
 
     max_vars_sat ( p , lastx , lastx+1 , range(1,lastx+1) , pivot )
 
-    return p()
+    return p
+
+def solve_puzzle( pivot ) :
+    return puzzle( pivot )( )
 
 lb = min( M , N ) # lower bound
 ub = int( M * N ) # upper bound
 
+print( 'Start exponential search')
 while True :
 
     print( 'ES target {} best {}'.format(lb , best ))
@@ -173,6 +178,7 @@ while True :
     if sol :
         output_solution(lb,sol)
         best = lb
+        best_sol = sol
         lb *= 2
     else :
         output_unsat(lb)
@@ -180,6 +186,7 @@ while True :
         lb //= 2
         break
 
+print( 'Start binary search')
 while lb <= ub :
 
     pivot = ( lb + ub ) // 2
@@ -191,14 +198,49 @@ while lb <= ub :
     if sol :
         output_solution(pivot,sol)
         best = pivot
+        best_sol = sol
         lb = pivot + 1
     else :
         output_unsat(pivot)
         ub = pivot - 1
 
-print( 'Found one optimal solution' )
+print( 'Found one optimal solution with score {}'.format( best ) )
+
+def sat_skip ( solution ) :
+
+    lastx = x(R-1,M-1,N-1)
+
+    for i in range( 1 , lastx + 1 ) :
+
+        if solution[i] :
+            yield -i
+
+        else :
+            yield i
 
 if args.enumerate :
+
     print( 'Start optimal solutions enumeration' )
 
+    opt = best
+    solutions = [ best_sol ]
 
+    while True :
+
+        p = puzzle( opt )
+
+        for solution in solutions :
+
+            p.add_clause( tuple( sat_skip( solution ) ) )
+
+        sol = p( )
+
+        if not sol :
+
+            print( 'No more optimal solutions' )
+            break
+
+        output_solution(opt, sol)
+        solutions.append( sol )
+
+    print( 'Found {} optimal solution with score {}.'.format( len( solutions ) , opt) )
