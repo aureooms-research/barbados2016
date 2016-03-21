@@ -128,6 +128,19 @@ def max_vars_sat ( p , nvars , firsty , variables , pivot ) :
     # return last y + 1
     return y( nvars , pivot ) + 1
 
+def sat_skip ( solution ) :
+
+    lastx = x(R-1,M-1,N-1)
+
+    for i in range( 1 , lastx + 1 ) :
+
+        if solution[i] :
+            yield -i
+
+        else :
+            yield i
+
+
 def puzzle ( pivot ) :
 
     p = SAT( solver = 'cryptominisat' )
@@ -165,25 +178,28 @@ def puzzle ( pivot ) :
 def solve_puzzle( pivot ) :
     return puzzle( pivot )( )
 
-lb = min( M , N ) # lower bound
-ub = int( M * N ) # upper bound
+LB = min( M , N ) # lower bound
+UB = int( M * N ) # upper bound
+
+lb = LB
+ub = lb # because of exponential search
 
 print( 'Start exponential search')
 while True :
 
     print( 'ES target {} best {}'.format(lb , best ))
 
-    sol = solve_puzzle(lb)
+    sol = solve_puzzle(ub)
 
     if sol :
-        output_solution(lb,sol)
-        best = lb
+        output_solution(ub,sol)
+        best = ub
         best_sol = sol
-        lb *= 2
+        lb = ub + 1
+        ub *= 2
     else :
-        output_unsat(lb)
-        ub = lb - 1
-        lb //= 2
+        output_unsat(ub)
+        ub = ub - 1
         break
 
 print( 'Start binary search')
@@ -205,18 +221,6 @@ while lb <= ub :
         ub = pivot - 1
 
 print( 'Found one optimal solution with score {}'.format( best ) )
-
-def sat_skip ( solution ) :
-
-    lastx = x(R-1,M-1,N-1)
-
-    for i in range( 1 , lastx + 1 ) :
-
-        if solution[i] :
-            yield -i
-
-        else :
-            yield i
 
 if args.enumerate :
 
