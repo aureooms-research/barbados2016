@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(description="Find Pat's game solutions for an M
 parser.add_argument('rows', metavar='M', type=int, help='number of rows')
 parser.add_argument('columns', metavar='N', type=int, help='number of columns')
 parser.add_argument('rounds', metavar='R', type=int, help='number of rounds')
-parser.add_argument('-e, --enumerate', action='store_true', help='enumerate all optimal solutions')
+parser.add_argument('-e', '--enumerate', action='store_true', help='enumerate all optimal solutions')
 args = parser.parse_args()
 
 M = args.rows # number of rows
