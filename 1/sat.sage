@@ -1,11 +1,19 @@
-import sys
+import argparse
 import hashlib
 
 # capital letter for a variable name means constant
 
-M = int( sys.argv[1] ) # number of rows
-N = int( sys.argv[2] ) # number of columns
-R = int( sys.argv[3] ) # number of rounds
+
+parser = argparse.ArgumentParser(description="Find Pat's game solutions for an M x N grid with R rounds.")
+parser.add_argument('rows', metavar='M', type=int, help='number of rows')
+parser.add_argument('columns', metavar='N', type=int, help='number of columns')
+parser.add_argument('rounds', metavar='R', type=int, help='number of rounds')
+parser.add_argument('-e, --enumerate', action='store_true', help='enumerate all optimal solutions')
+args = parser.parse_args()
+
+M = args.rows # number of rows
+N = args.columns # number of columns
+R = args.rounds # number of rounds
 
 best = None
 nsol = 0
@@ -187,4 +195,10 @@ while lb <= ub :
     else :
         output_unsat(pivot)
         ub = pivot - 1
+
+print( 'Found one optimal solution' )
+
+if args.enumerate :
+    print( 'Start optimal solutions enumeration' )
+
 
