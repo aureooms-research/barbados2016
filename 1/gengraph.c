@@ -3097,8 +3097,9 @@ void PrintGraph(graph *G)
 
 int NbEdges(graph *G)
 /*
-  Retourne le nombre d'arêtes de G, G->m si positif. Si G->m<0, alors
-  G->m est mis à jour à partir de la somme des G->d[i].
+  Retourne le nombre d'arêtes d'un graphe symétrique G ou bien le
+  champs G->m s'il est positif. Si G->m<0, alors G->m est mis à jour à
+  partir de la somme des G->d[i].
 */
 { int m=G->m;
   if(m<0){
@@ -7791,11 +7792,11 @@ int *GreedyColor(graph *G,int *R)
 
 void HalfGraph(graph *G){
 /*
-  Modifie un graphe symétrique et le transforme en graphe asymétrique
-  en ne gardant que les arcs u->v tels que v<u. En particulier les
-  boucles sont supprimés. Les listes d'adjacence sont aussi triées.
-  Cela permet de faire des parcours de graphe deux fois plus
-  rapidement, par exemple, pour vérifier qu'une coloration est propre.
+  Transforme G en un graphe asymétrique en ne gardant que les arcs
+  u->v tels que v<u. En particulier les boucles sont supprimés. Les
+  listes d'adjacence sont aussi triées.  Cela permet de faire des
+  parcours de graphe deux fois plus rapidement, par exemple, pour
+  vérifier qu'une coloration est propre.
 */
   if(G==NULL) return;
   if(!G->sym) return;
@@ -7870,6 +7871,30 @@ void kIndepSat(graph *G,int k){
   Affiche les contraintes SAT pour ensemble indépendant de taille k
   pour le graphe G au format Dimacs. Attention ! G est modifié (manque
   la moitié de ses arcs).
+
+  Variables:
+
+    Pour chaque i=0..n-1:
+    X(i)=1 ssi le sommet i est dans l'ensemble indépendant.
+    Si i-j est une arête alors -X(i) v -X(j).
+    NB: pour Vertex Cover, il faudrait suffit d'ajouter X(i) v X(j).
+
+    Pour chaque t=0..n et b=0..k:
+    Y(t,b)=1 ssi la somme des t variables X_0+...+X(t-1) est au
+    moins b. On a:
+
+       Y(n,k) = 1
+       Y(t,0)=1 pour tout t>=0
+       Y(t,b)=0 pour tout 0<=t<b et b>0
+       Y(t,b) => Y(t-1,b) v (Y(t-1,b-1) ^ X(t-1))
+
+       <=> -Y(t,b) v Y(t-1,b) v Y(t-1,b-1) ET
+           -Y(t,b) v Y(t-1,b) v X(t-1)
+
+    #variables X(i): n
+    #variables Y(t,b): (n+1)*(k+1)
+    #variables totales: n+(n+1)*(k+1)
+
 */
 
   if(G==NULL) return;
@@ -7877,53 +7902,47 @@ void kIndepSat(graph *G,int k){
   
   n=G->n;
   m=NbEdges(G);
-  printf("p cnf %i %i\n",n+(n+1)*(k+1),m+n+k+2*n*k+2);
 
-  /*
-    Variables:
-
-    Pour chaque i=0..n-1:
-    X_i=1 ssi le sommet i est dans l'ensemble indépendant
-
-    Pour chaque t=0..n et b=0..k:
-    Y_{t,b}=1 ssi la somme des t variables X_0+...+X_(t-1) est au moins b.
-
-    Nombre de variables X_i: n
-    Nombre de variables Y_{t,b}: (n+1)*(k+1)
-    Nombre de variables totales: n+(n+1)*(k+1)
-  */
+  // il faut entrer le nombre exactes de variables et de clauses
+  printf("p cnf %i %i\n",n+(n+1)*(k+1),m+n+2+k*(k+1)/2+k*(2*n+1-k));
 
   /* numéros des variables: attention de ne surtout pas utiliser la
      variable numéro 0 qui signifie "fin de ligne" */
 
-#define X(i)   (i+1)               // numéro de la variable X_i
-#define Y(t,b) (n+1+(k+1)*(t)+(b)) // numéro de la variable Y_{t,b}
+#define X(i)   ((i)+1)             // numéro de la variable X(i)
+#define Y(t,b) (n+1+(t)*(k+1)+(b)) // numéro de la variable Y(t,b)
 
-  HalfGraph(G); /* enlève la moitié des arcs */
+  HalfGraph(G); /* rend le graphe simple et asymétrique */
 
-  // clauses pour les arêtes i-j: -X(i) v -X(j) (m clauses) */
+  // pour chaque arêtes i-j: -X(i) v -X(j)
+  // #clauses: m
   for(i=0;i<n;i++){
     d=G->d[i];
     for(j=0;j<d;j++)
       printf("-%i -%i 0\n",X(i),X(G->L[i][j]));
   }
 
-  // cas b=0 et t>=0: Y_{t,0}=1 (n+1 clauses) */
+  // Y(n,k)=1
+  // #clause: 1
+  printf("%i 0\n",Y(n,k));
+
+  // cas b=0 et t>=0: Y(t,0)=1
+  // #clauses: n+1
   for(t=0;t<=n;t++) printf("%i 0\n",Y(t,0));
 
-  // cas b>=1 et t=0: Y_{0,b}=0 (k clauses) 
-  for(b=1;b<=k;b++) printf("-%i 0\n",Y(0,b));
-
-  // cas b>=1 et t>=1: Y_{t,b} => Y_{t-1,b} v (Y_{t-1,b-1} ^ X_{t-1})
-  // (2*n*k clauses)
+  // cas b>=1 et 0<=t<b: Y(t,b)=0
+  // #clauses: 1+2+3+...+k = k*(k+1)/2
   for(b=1;b<=k;b++)
-    for(t=1;t<=n;t++){
+    for(t=0;t<b;t++)
+      printf("-%i 0\n",Y(t,b));
+
+  // cas b>=1 et t>=b: récurrence
+  // #clauses: 2*sum_{b=1}^k (n-b+1) = 2*(n+1)*k - k(k+1) = k*(2*n+1-k)
+  for(b=1;b<=k;b++)
+    for(t=b;t<=n;t++){
       printf("-%i %i %i 0\n",Y(t,b),Y(t-1,b),Y(t-1,b-1));
       printf("-%i %i %i 0\n",Y(t,b),Y(t-1,b),X(t-1));
     }
-
-  // Y(n,k)=1 (1 clause)
-  printf("%i 0\n",Y(n,k));
 
   return;
 }
@@ -8901,7 +8920,7 @@ int pat(int i,int j){
   (x,y) d'une des k grilles. On suppose que i<j, ce qui revient à dire
   que la grille de i est placée avant ou est égale à celle de j.
 
-  Exemple: n=3 et k=4
+  Exemple: p=q=3 et k=4
 
   06 07 08  15 16 17  24 25 26  33 34 35
   03 04 05  12 13 14  21 22 23  30 31 32
@@ -8912,49 +8931,56 @@ int pat(int i,int j){
 */
   if(j<0) return gabriel(i,j);
 
-  const int n=PARAM[0];
-  const int k=PARAM[1];
-  const int n2=n*n;
+  const int p=PARAM[0]; // p=colonne
+  const int q=PARAM[1]; // q=ligne
+  const int r=PARAM[2]; // r=round
+  const int pq=p*q;
 
   if(i<0){
-    N=n2*k;
+    N=pq*r;
     if(N<=0) return N=0;
-    if((k<=0)||(n<=0)) Erreur(6);
+    if((p<=0)||(q<=0)||(r<=0)) Erreur(6);
 
-    /* détermine les coordonnées: les grilles sont placées à des
-       hauteurs de plus en plus grandes pour "voir" les arêtes. Au
-       départ (z=0), la première grille est mise à une hauteur 0, puis
-       à une hauteur 1, puis à une hauteur 3, puis à une hauteur 6,
-       etc. La hauteur de la grille pour z quelconque est z(z+1)/2. */
+    /* Détermine les coordonnées des points un controler le
+       dessin. Les grilles sont placées à des hauteurs de plus en plus
+       grandes pour "voir" les arêtes. Au départ (z=0), la première
+       grille est mise à une hauteur 0, puis à une hauteur 1, puis à
+       une hauteur 3, puis à une hauteur 6, etc. La hauteur de la
+       grille pour z quelconque est z(z+1)/2. En fait, on utilise
+       z(z+1)/2.5 pour une meilleure lisibilité. */
 
-    XYtype=XY_USER; /* coordonnées fixées par l'utilisateur */
     ALLOC(XPOS,N);
     ALLOC(YPOS,N);
     int u,x,y,z;
-    for(u=0;u<N;u++){
-      z=u/n2;     // z=grille
-      x=u%n;      // x=colonne
-      y=(u%n2)/n; // y=ligne
-      XPOS[u]=(double)(x+z*n)/(double)n;
-      YPOS[u]=(double)(y+(z*(z+1)/2)*n)/(double)n;
+    double h;
+
+    for(u=0;u<N;u++){// pour tous les sommets, faire:
+      z=u/(pq);      // z=grille
+      x=u%p;         // x=colonne
+      y=(u%(pq))/p;  // y=ligne
+      h=z*(z+1)/2.5; // h=décalage vers le haut de la grille z
+      XPOS[u]=(double)(x+z*p)/(double)max(p,q);
+      YPOS[u]=(double)(y+h*q)/(double)max(p,q);
     }
-    InitXY();
+
+    XYtype=XY_USER; /* coordonnées fixées par l'utilisateur */
+    InitXY(); // pour les options -xy noise/scale ... */
     return N;
   }
 
   // z=grille
-  const int zi = i/n2;
-  const int zj = j/n2;
+  const int zi = i/pq;
+  const int zj = j/pq;
 
   /* ici: zi<=zj car i<j */
 
   // x=colonne
-  const int xi = i%n;
-  const int xj = j%n;
+  const int xi = i%p;
+  const int xj = j%p;
 
   // y=ligne
-  const int yi = (i%n2)/n;
-  const int yj = (j%n2)/n;
+  const int yi = (i%pq)/p;
+  const int yj = (j%pq)/p;
 
   if(zj==zi)
     return ((xj>=xi)&&(yj<=yi)) || ((xj<=xi)&&(yj>=yi));
@@ -11706,25 +11732,97 @@ double CheckProba(double v){
 ***************************************/
 
 
-void Grep(char *mot){
+void Grep(int i){
 /*
-  Cherche "^....mot" dans l'aide contenu dans le source du programme,
-  puis termine par exit().
+  Cherche le mot ARGV[i] dans l'aide contenu dans le source du
+  programme, puis termine par exit().
+
+  Plusieurs cas peuvent se présenter:
+  
+  Cas 1: ARGV[i] est une option, ou aucun ARGV[j] avec j<i n'est une
+  option.  Alors on affiche l'aide allant de "^....ARGV[i]($| )" à
+  "^$".
+
+  Cas 2: ARGV[j] est une option mais pas ARGV[i] avec j<i. Dans ce
+  cas, soit mot=ARGV[j]" "ARGV[j+1]" "..." "ARGV[i]. Alors on affiche
+  l'aide allant de "[ ]{7}mot($| )" à "^$" ou "^[ ]{7}-fin" avec
+  fin défini de sorte que mot ne soit pas un préfixe.
+
+  En fait on bride la recherche de l'option à ARGV[i-1] ou ARGV[i-2]
+  seulement, si bien que j=i, i-1 ou i-2.
 */
 
-  NALLOC(char,s,CMDMAX);
+  int j=i,t,k;
+
+  do{ // calcule j=i, i-1 ou i-2
+    if((i>0)&&(*ARGV[i-0]=='-')){ j=i-0; break; }
+    if((i>1)&&(*ARGV[i-1]=='-')){ j=i-1; break; }
+    if((i>2)&&(*ARGV[i-2]=='-')){ j=i-2; break; }
+  }while(0);
+
+  // construit mot
+
+  NALLOC(char,mot,CMDMAX); VIDE(mot);
+  for(t=j;t<=i;t++){
+    strcat(mot,ARGV[t]);
+    if(t<i) strcat(mot," ");
+  }
+
+  // construit fin (à faire seulement si j<i)
+  // si ARGV[j]="-option abc xy"
+  // alors fin="-option ([^a]|a[^b]|ab[^c]abc) ([^x]|x[^y])"
+
+  NALLOC(char,fin,CMDMAX); VIDE(fin);
+  if(j<i){
+    strcat(fin,ARGV[j]);
+    strcat(fin," (");
+    t=j+1; k=0;
+    while(ARGV[t][k]){
+      strncat(fin,ARGV[t],k);
+      strcat(fin,"[^");
+      strncat(fin,ARGV[t]+k,1);
+      strcat(fin,"]|");
+      k++;
+      if(ARGV[t][k]==0){
+	if(t==i) break;
+	strcat(fin,ARGV[t]);
+	strcat(fin,") (");
+	t++; k=0;
+      }
+    }
+    fin[strlen(fin)-1]=')';
+  }
+
+  // construit la commande s
+
+  NALLOC(char,s,CMDMAX); VIDE(s);
   strcat(s,"sed -n '/*[#] ###/,/### #/p' ");
   strcat(strcat(s,*ARGV),".c|");
-  /* rem: sed -E n'est pas standard ... */
-  strcat(strcat(strcat(s,"sed -nE '/^[.][.][.][.]"),mot),"(($)|( ))/,/^$/p'|");
-  strcat(s,"sed 's/^[.][.][.][.]/    /g'");
+  /* rem: sed -E n'est pas standard */
+
+  if(j==i)
+    strcat(strcat(strcat(s,"sed -nE '/^[.]{4}"),mot),"($|[ ])/,/^$/p'|");
+  else{
+    strcat(strcat(strcat(s,"sed -nE '/^[ ]{7}"),mot),"($|[ ])/,/(^$)|(^[ ]{7}");
+    strcat(s,strcat(fin,")/p'|tail -r|sed -n '2,$p'|"));
+    // les tail -r permettent de supprimer la dernière ligne
+    // le awk est pour enlever éventuellement l'avant dernière ligne "...."
+    strcat(s,"awk '{if(NR>1)print $0;else if(!match($0,/^[.]{4}/))print $0;}'|");
+    strcat(s,"tail -r|");
+  }
+
+  strcat(s,"sed -E 's/^[.]{4}/    /g'");
   strcat(s,"| awk '{n++;print $0;}END{if(!n) ");
-  strcat(s,"print\"Erreur : argument incorrect.\\nAide sur '");
+  strcat(s,"print\"Erreur : argument incorrect.\\nAide sur ");
   strcat(s,mot);
-  strcat(s,"' non trouvée.\\n\";}'");
+  strcat(s," non trouvée.\\n\";}'");
   printf("\n");
   system(s);
+
+  if(j<i) printf("\n");
   free(s);
+  free(mot);
+  free(fin);
   exit(EXIT_SUCCESS);  
 }
 
@@ -11732,37 +11830,37 @@ void Grep(char *mot){
 char *GetArgInc(int *i){
 /*
   Retourne ARGV[i], s'il existe, puis incrémente i.  Si l'argument
-  n'existe pas, on affiche l'aide en ligne sur le dernier argument
-  demandé et l'on s'arrête.
+  n'existe pas ou si ARGV[i]="?", on affiche l'aide en ligne sur le
+  dernier argument demandé et l'on s'arrête.
 */
-
-  if(((*i)==ARGC)||(strcmp(ARGV[*i],"?")==0)) Grep(ARGV[(*i)-1]);
+  
+  if(((*i)==ARGC)||(strcmp(ARGV[*i],"?")==0)) Grep((*i)-1);
   return ARGV[(*i)++];
 }
 
 
 void CheckHelp(int *i){
 /*
-  Incrémente i puis vérifie si le prochain argument est "?". Si tel
-  est le cas, une aide est affichée sur ARGV[i] (avant
-  incrémentation).  Cette fonction devrait être typiquement appellée
-  lorsqu'on vérifie l'aide pour un graphe sans paramètre. Sinon c'est
-  fait par GetArgInc().
+  Incrémente i puis vérifie si l'argument est "?". Si tel est le cas,
+  une aide est affichée sur ARGV[i] (avant incrémentation).  Cette
+  fonction devrait être typiquement appellée lorsqu'on vérifie l'aide
+  pour un graphe sans paramètre. Sinon c'est fait par GetArgInc().
 */
   
   (*i)++;
-  if(((*i)!=ARGC)&&(strcmp(ARGV[*i],"?")==0)) Grep(ARGV[(*i)-1]);
+  if(((*i)!=ARGC)&&(strcmp(ARGV[*i],"?")==0)) Grep((*i)-1);
+  return;
 }
 
 
 void Help(int i){
 /*
   Affiche:
-  - l'aide complète si dernier argument est "-help" ou "?", ou
+  - l'aide complète si ARGV[i] est "-help" ou "?", ou
   - les paragraphes contenant ARGV[i].
 */
   
-  NALLOC(char,s,CMDMAX);
+  NALLOC(char,s,CMDMAX); VIDE(s);
   strcat(s,"sed -n '/*[#] ###/,/### #/p' "); /* filtre l'aide */
   strcat(strcat(s,*ARGV),".c | "); /* enlève 1ère et dernière ligne */
   strcat(s,"sed -e 's/\\/\\*[#] ###//g' -e 's/### [#]\\*\\///g' ");
@@ -11770,7 +11868,7 @@ void Help(int i){
   if((i==ARGC)||(ARGV[i][0]=='?'))
     strcat(s,"-e 's/^[.][.][.][.][.]*/    /g'|more"); /* aide complète */
   else{
-    strcat(s,"|awk 'BEGIN{x=\".....\"}/^[.][.][.][.]./{x=$0} /");
+    strcat(s,"|awk 'BEGIN{x=\".....\"}/^[.]{4}./{x=$0} /");
     strcat(strcat(s,ARGV[i]),"/{if(x!=\".....\")print substr(x,5)}'|sort -u");
   }
   system(s);
@@ -11784,7 +11882,7 @@ void ListGraph(void){
   Affiche les graphes possibles et puis termine.
 */
 
-  NALLOC(char,s,CMDMAX);
+  NALLOC(char,s,CMDMAX); VIDE(s);
   strcat(s,"sed -n '/*[#] ###/,/### #/p' ");
   strcat(strcat(s,*ARGV),".c| ");
   strcat(s,"sed -e 's/\\/\\*[#] ###//g' -e 's/### [#]\\*\\///g'| ");
@@ -11800,7 +11898,7 @@ void Version(void){
   Affiche la version du programme.
 */
 
-  NALLOC(char,s,CMDMAX);
+  NALLOC(char,s,CMDMAX); VIDE(s);
   strcat(s,"sed -n '/*[#] ###/,/### #/p' ");
   strcat(strcat(s,*ARGV),".c| ");
   strcat(s,"sed -n 's/.*[-] v\\([0-9]*[.][0-9]*\\) [-].*/\\1/p'");
@@ -12556,7 +12654,7 @@ int main(int argc, char *argv[]){
   while(i<ARGC){
 
     if EQUAL("-version") Version();
-    if (EQUAL("-help")&&(i+1<ARGC)&&(strcmp(ARGV[i+1],"?")==0)) Grep("-help");
+    if (EQUAL("-help")&&(i+1<ARGC)&&(strcmp(ARGV[i+1],"?")==0)) Grep(i);
     if (EQUAL("-help")||EQUAL("?")) Help(i);
     if EQUAL("-list"){ CheckHelp(&i); ListGraph(); }
     
@@ -12841,7 +12939,7 @@ int main(int argc, char *argv[]){
       }
     if EQUAL("-check"){ i++;GetArgInc(&i);i--; /* pour l'aide en ligne */
 	if(CHECK>CHECK_ON) Erreur(27); /* on ne devrait jamais avoir deux fois -check */
-	if(CPARAM==NULL) ALLOC(CPARAM,PARAMSIZE);
+	if(CPARAM==NULL) ALLOC(CPARAM,PARAMSIZE); /* alloue les paramètres */
 	if EQUAL("bfs"){
 	    CHECK=CHECK_BFS;
 	  check0:
@@ -13231,11 +13329,11 @@ int main(int argc, char *argv[]){
     if EQUAL("linialc"){ adj=linialc; goto param2; }
     if EQUAL("expander"){ adj=expander; goto param2; }
     if EQUAL("fan"){ adj=fan; goto param2; }
-    if EQUAL("pat"){ adj=pat; POS=1; goto param2; }
     //
     if EQUAL("rarytree"){ adj=rarytree; goto param3; }
     if EQUAL("barbell"){ adj=barbell; goto param3; }
     if EQUAL("planar"){ adj=planar; goto param3; }
+    if EQUAL("pat"){ adj=pat; POS=1; goto param3; }
     //
     if EQUAL("chess"){ adj=chess; goto param4; }
 
@@ -14019,16 +14117,17 @@ int main(int argc, char *argv[]){
       free_rs_bc_tables(RT); /* libère */
     }
     
-    free_graph(GF); /* supprime le graphe */
-    free(CPARAM); /* supprime les paramètres pour CHECK */
-  } /* fin if(CHECK) */
+    free_graph(GF),GF=NULL; /* supprime le graphe */
+    free(CPARAM),CPARAM=NULL; /* supprime les paramètres pour CHECK */
+  }
+  /* fin du "if(CHECK)" */
 
   TopChrono(-1); /* libère les chronos */
   return 0; /* fin de gengraph */
 }
 
 /*# ###
-Générateur de graphes - v3.9 - © Cyril Gavoille - Febuary 2016
+Générateur de graphes - v4.0 - © Cyril Gavoille - March 2016
 
 USAGE
 
@@ -14183,6 +14282,7 @@ OPTIONS
        Ex: gengraph ? arbre
            gengraph ktree ?
 	   gengraph ? hedron
+	   gengraph ? planaire
 ....
        La forme ? peut ne pas fonctionner correctement si un fichier
        d'un seul caractère existe dans le répertoire courant (à cause
@@ -14452,6 +14552,22 @@ OPTIONS
           affiché, et donc -format no n'est pas nécessaire.
 ....
 	  Ex: gengraph linial 6 3 -check kcolorsat 3 | ./glucose -model
+....
+       -check kindepsat k
+....
+          Donne une formulation SAT pour le graphe du problème
+          ensemble indépendant de taille k. Les variables i=1 à n sont
+          les variables indiquant si le numéroté i-1 est dans la
+          soltuion ou pas. Les contraintes sont décrites au format
+          Dimacs CNF. On peut alors envoyer le résultat à un solveur
+          SAT comme MiniSat ou Glucose. Le graphe n'est pas affiché,
+          et donc -format no n'est pas nécessaire.
+....
+          Pour le problème clique de taille k, il suffit de chercher
+          un ensemble indépendant detaille k pour le complément du
+          graphe. Et pour le problème "vertex cover" de taille k,
+          c'est un ensemble indépendant de taille n-k sur le
+          complémentaire qu'il suffit de chercher.
 ....
        -check ps1
        -check ps1b
@@ -15646,22 +15762,22 @@ OPTIONS
 
 ....sat n m k
 ....
-       Graphe issu de la réduction du problème k-SAT à Vertex
-       Cover. Le calcul d'un Vertex Cover de taille minimum pour ce
-       graphe est donc difficile pour k>2. Soit F une formule de k-SAT
-       avec n variables x_i et m clauses de k termes. Le graphe généré
-       par "sat n m k" possède un Vertex Cover de taille n+(k-1)m si
-       et seulement si F est satisfiable. Ce graphe est composé d'une
-       union de n arêtes et de m cliques de k sommets, plus des arêtes
-       connectant certains sommets des cliques aux n arêtes. Les n
-       arêtes représentent les n variables, une extrémité pour x_i,
-       l'autre pour non(x_i). Ces sommets ont des numéros dans [0,2n[,
-       x_i correspond au sommet 2(i-1) et non(x_i) au sommet 2i-1,
-       i=1...n. Les sommets des cliques ont des numéros consécutifs ≥
-       2n. Le j-ème sommet de la i-ème clique est connecté à l'une des
-       extrémités de l'arête k ssi la j-ème variable de la i-ème
-       clause est x_k (ou non(x_i)). Ces connexions sont aléatoires
-       uniformes.
+       Graphe aléatoire issu de la réduction du problème k-SAT à
+       Vertex Cover. Le calcul d'un Vertex Cover de taille minimum
+       pour ce graphe est donc difficile pour k>2. Soit F une formule
+       de k-SAT avec n variables x_i et m clauses CNF de k termes.  Le
+       graphe généré par "sat n m k" possède un Vertex Cover de taille
+       n+(k-1)m si et seulement si F est satisfiable. Ce graphe est
+       composé d'une union de n arêtes et de m cliques de k sommets,
+       plus des arêtes connectant certains sommets des cliques aux n
+       arêtes. Les n arêtes représentent les n variables, une
+       extrémité pour x_i, l'autre pour non(x_i). Ces sommets ont des
+       numéros dans [0,2n[, x_i correspond au sommet 2i-2 et non(x_i)
+       au sommet 2i-1, i=1...n. Les sommets des cliques ont des
+       numéros consécutifs ≥ 2n. Le j-ème sommet de la i-ème clique
+       est connecté à l'une des extrémités de l'arête k ssi la j-ème
+       variable de la i-ème clause est x_k (ou non(x_i)). Ces
+       dernières connexions sont aléatoires uniformes.
 
 ....kout n k
 ....
@@ -16145,14 +16261,31 @@ OPTIONS
        n'est pas tout-à-fait le graph Yao_k, pour cela il faudrait que
        u soit le centre du polygone (c'est-à-dire du cercle).
 
-....pat n k
+....pat p q r
 ....
-       Graphe issu du jeu proposé par Pat Morin en 2016 à la
-       Barbade. Le jeu se déroule une une grille n×n et comprend k
-       coups. Un coup est un ensemble de positions de la grille qui
-       doivent être strictement monotones (coordonnées et x et en y
-       strictement croissante). Les positions jouées au coup ... Un
-       sommet correspond à un sommet (x,y) d'une des k grilles n×n.
+       Graphe possédant pqr sommets, issu d'un jeu à un joueur proposé
+       par Pat Morin (Barbade, mars 2016). Le jeu se déroule sur une
+       grille p×q et comprend r coups. Un coup est un ensemble de
+       positions de la grille strictement croissantes (coordonnées en
+       x et en y strictement croissantes). De plus, si la position
+       (x,y) est jouée alors toutes les positions situées sur la même
+       ligne mais avec une abscisse au moins x ou sur la même colonne
+       mais avec une ordonnées au moins y sont interdites pour tous
+       les coups suivants. Le score est le nombre total de positions
+       jouées en r coups. Il s'agit de trouver le score maximum.
+       Lorsque r=1, le score maximum vaut min(p,q). Lorsque p=q=n et
+       r=2, alors le score maximum vaut ⎣ 4n/3⎦. La question est
+       ouverte lorsque r>2, c'est au moins n^1.516 pour r=n où la
+       constante vaut log_9(28).
+....
+       Les sommets du graphes sont les positions dans les r grilles
+       p×q et deux sommets sont adjacents les positions sont en
+       conflits. Le score du jeu est alors un ensemble indépendant du
+       graphe. Si r=1, le graphe est une grille p×q. Ce graphe active
+       l'option -pos car un dessin de ce graphe (sous forme de
+       grilles) est proposé.
+....
+       Ex: gengraph pat 4 4 4 -check kindepsat 8 | ./glucose -model
 
 ....rplg n t
 ....
@@ -17051,4 +17184,9 @@ HISTORIQUE
               nng, rng) afin que le test d'adjacence ne dépende plus de N
               mais de PARAM[0] par exemple
 	    - introduction du format %SEED pour l'option -caption
+
+       v4.0 mars 2016:
+	    - nouveaux graphes: pat
+	    - nouvelles options: -check kindepsat
+	    - aide permettant les préfixes comme -check routing cluster
 ### #*/
