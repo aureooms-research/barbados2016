@@ -9,6 +9,8 @@ parser.add_argument('rows', metavar='M', type=int, help='number of rows')
 parser.add_argument('columns', metavar='N', type=int, help='number of columns')
 parser.add_argument('rounds', metavar='R', type=int, help='number of rounds')
 parser.add_argument('-e', '--enumerate', action='store_true', help='enumerate all optimal solutions')
+parser.add_argument('-l', '--lb', type=int, help='lower bound')
+parser.add_argument('-u', '--ub', type=int, help='upper bound')
 args = parser.parse_args()
 
 M = args.rows # number of rows
@@ -65,17 +67,19 @@ def output_unsat ( val ) :
 
 def output_solution ( val , sol ) :
 
+    moves = list(getmoves( sol ))
+
+    if val > len(moves) :
+        print( '> val {} > len(moves) {}'.format(val, len(moves)))
+        print( '> still writing output just in case')
+
+    val = len(moves)
+
     global nsol
     nsol += 1
 
     print( 'solution #{}'.format( nsol ) )
     print( '> score : {}'.format( val ) )
-
-    moves = list(getmoves( sol ))
-
-    if val != len(moves) :
-        print( '> val {} != len(moves) {}'.format(val, len(moves)))
-        print( '> still writing output just in case')
 
     for round , point in moves :
         print( '! round {}, play point {}'.format( round , point ) )
@@ -94,6 +98,8 @@ def output_solution ( val , sol ) :
 
     with out(val, 'sat', h, 'w') as fd :
         fd.write(raw)
+
+    return val
 
 def max_vars_sat ( p , nvars , firsty , variables , pivot ) :
 
@@ -178,29 +184,36 @@ def puzzle ( pivot ) :
 def solve_puzzle( pivot ) :
     return puzzle( pivot )( )
 
-LB = min( M , N ) # lower bound
-UB = int( M * N ) # upper bound
+LB = min( M , N ) if args.lb is None else args.lb # lower bound
+# UB = int( M * N ) # upper bound
 
 lb = LB
-ub = lb # because of exponential search
 
-print( 'Start exponential search')
-while True :
+if args.ub is None :
 
-    print( 'ES target {} best {}'.format(lb , best ))
+    ub = lb # because of exponential search
 
-    sol = solve_puzzle(ub)
+    print( 'Start exponential search')
+    while True :
 
-    if sol :
-        output_solution(ub,sol)
-        best = ub
-        best_sol = sol
-        lb = ub + 1
-        ub *= 2
-    else :
-        output_unsat(ub)
-        ub = ub - 1
-        break
+        print( 'ES target {} best {}'.format(ub , best ))
+
+        sol = solve_puzzle(ub)
+
+        if sol :
+            ub = output_solution(ub,sol)
+            best = ub
+            best_sol = sol
+            lb = ub + 1
+            ub *= 2
+        else :
+            output_unsat(ub)
+            ub = ub - 1
+            break
+
+else :
+
+    ub = args.ub
 
 print( 'Start binary search')
 while lb <= ub :
@@ -212,7 +225,7 @@ while lb <= ub :
     sol = solve_puzzle(pivot)
 
     if sol :
-        output_solution(pivot,sol)
+        pivot = output_solution(pivot,sol)
         best = pivot
         best_sol = sol
         lb = pivot + 1
@@ -220,31 +233,37 @@ while lb <= ub :
         output_unsat(pivot)
         ub = pivot - 1
 
-print( 'Found one optimal solution with score {}'.format( best ) )
+if best is not None :
 
-if args.enumerate :
+    if args.ub is None or best < args.ub :
+        print( 'Found one optimal solution with score {}'.format( best ) )
+    else:
+        print( 'Found one solution with score {}'.format( best ) )
 
-    print( 'Start optimal solutions enumeration' )
+    if args.enumerate :
 
-    opt = best
-    solutions = [ best_sol ]
+        print( 'Start solutions enumeration' )
 
-    while True :
+        opt = best
+        solutions = [ best_sol ]
 
-        p = puzzle( opt )
+        while True :
 
-        for solution in solutions :
+            p = puzzle( opt )
 
-            p.add_clause( tuple( sat_skip( solution ) ) )
+            for solution in solutions :
 
-        sol = p( )
+                p.add_clause( tuple( sat_skip( solution ) ) )
 
-        if not sol :
+            sol = p( )
 
-            print( 'No more optimal solutions' )
-            break
+            if not sol :
 
-        output_solution(opt, sol)
-        solutions.append( sol )
+                print( 'No more solutions' )
+                break
 
-    print( 'Found {} optimal solution with score {}.'.format( len( solutions ) , opt) )
+            opt = output_solution(opt, sol)
+            solutions.append( sol )
+
+        if len( solutions ) > 0 :
+            print( 'Found {} solutions with score {}.'.format( len( solutions ) , opt) )
